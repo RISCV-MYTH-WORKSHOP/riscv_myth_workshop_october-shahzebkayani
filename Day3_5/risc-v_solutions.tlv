@@ -39,7 +39,9 @@
    |cpu
       @0
          $reset = *reset;
-         $pc[31:0] = >>1$reset ? 32'b0 : >>1$pc + 32'd4;
+         $pc[31:0] = >>1$reset ? 32'b0 :
+                     >>1$taken_br ? >>1$br_target_pc :
+                     >>1$pc + 32'd4;
       @1 
          $imem_rd_addr[M4_IMEM_INDEX_CNT-1:0] = $pc[M4_IMEM_INDEX_CNT+1:2];
          $imem_rd_en = !$reset;
@@ -125,6 +127,9 @@
          
          //Branch Instructions
          $taken_br = $is_beq ? ($src1_value == $src2_value) : $is_bne ? ($src1_value != $src2_value) : $is_blt ? (($src1_value < $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bge ? (($src1_value >= $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bltu ? ($src1_value < $src2_value) : $is_bgeu ? ($src1_value >= $src2_value) : 1'b0;
+         $br_target_pc[31:0] = $pc +$imm;
+         
+         `BOGUS_USE($is_beq $is_bne $is_blt $is_bge $is_bltu $is_bgeu)
       // ...
 
       // Note: Because of the magic we are using for visualisation, if visualisation is enabled below,
