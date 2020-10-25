@@ -102,6 +102,17 @@
          $is_bltu = $dec_bits ==? 11'bx_110_1100011;
          $is_bge = $dec_bits ==? 11'bx_101_1100011;
          $is_blt = $dec_bits ==? 11'bx_100_1100011;
+         
+         //Register file-read
+         ?$rs1_valid
+            $rf_rd_en1 = $rs1_valid;
+            $rf_rd_index1[4:0] = $rs1[4:0];
+         ?$rs2_valid
+            $rf_rd_en2 = $rs2_valid;
+            $rf_rd_index2[4:0] = $rs2[4:0];
+         
+         $src1_value[31:0] = $rf_rd_data1[31:0];
+         $src2_value[31:0] = $rf_rd_data2[31:0];
    // ...
 
       // Note: Because of the magic we are using for visualisation, if visualisation is enabled below,
