@@ -93,6 +93,15 @@
          ?$rd_valid
             $rd[4:0] = $instr[11:7];
          $opcode[6:0] = $instr[6:0];
+         
+         //Individual instructions decode
+         $dec_bits[10:0] = {$funct7[5],$funct3,$opcode};
+         $is_beq = $dec_bits ==? 11'bx_000_1100011;
+         $is_bgeu = $dec_bits ==? 11'bx_111_1100011;
+         $is_bne = $dec_bits ==? 11'bx_001_1100011;
+         $is_bltu = $dec_bits ==? 11'bx_110_1100011;
+         $is_bge = $dec_bits ==? 11'bx_101_1100011;
+         $is_blt = $dec_bits ==? 11'bx_100_1100011;
    // ...
 
       // Note: Because of the magic we are using for visualisation, if visualisation is enabled below,
