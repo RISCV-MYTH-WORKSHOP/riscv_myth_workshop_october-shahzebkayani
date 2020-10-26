@@ -36,51 +36,63 @@
    // Optional:
    // m4_asm(JAL, r7, 00000000000000000000) // Done. Jump to itself (infinite loop). (Up to 20-bit signed immediate plus implicit 0 bit (unlike JALR) provides byte address; last immediate bit should also be 0)
    m4_define_hier(['M4_IMEM'], M4_NUM_INSTRS)
+
    |cpu
       @0
          $reset = *reset;
          $start = !$reset && >>1$reset;
-         $valid = $reset ? 1'b0 :
-                 $start ? 1'b1 :
-                 >>3$valid;
+         
          $pc[31:0] = >>1$reset ? 32'b0 :
-                     >>1$taken_br ? >>1$br_target_pc :
-                     >>1$pc + 32'd4;
-         $pc[31:0] = >>1$reset ? 32'b0 :
-                     >>1$taken_br ? >>1$br_target_pc :
-                     >>1$pc + 32'd4;
+                     >>3$valid_taken_br ? >>3$br_target_pc :
+                     >>3$valid_load ? >>3$inc_pc :
+                     >>3$valid_jump && >>3$is_jal ? >>3$br_target_pc :
+                     >>3$valid_jump && >>3$is_jalr ? >>3$jalr_target_pc :
+                     >>1$inc_pc ;
+                     
+         
+                     
       @1 
+         $inc_pc[31:0] = $pc + 32'd4;
          $imem_rd_addr[M4_IMEM_INDEX_CNT-1:0] = $pc[M4_IMEM_INDEX_CNT+1:2];
          $imem_rd_en = !$reset;
          $instr[31:0] = $imem_rd_data;
          
-
+      @3
+         //CYCLE VALID INSTRUCTIONS
+         $valid = !(>>1$valid_taken_br || >>2$valid_taken_br || 
+                    >>1$valid_load || >>2$valid_load ||  
+                    >>1$valid_jump || >>2$valid_jump) ;
+         
+         $valid_load = $valid && $is_load ;
+         
+         $valid_jump = $is_jump && $valid ;
+      @1   
+      
             
       //Instructions type decode  
-      @1
+      
          $is_u_instr = $instr[6:2] ==? 5'b0x101;
          
          $is_s_instr = $instr[6:2] ==? 5'b0100x;
          
-         $is_r_instr = $instr[6:2] ==? 5'b01011 ||
-                       $instr[6:2] ==? 5'b011x0 ||
+         $is_r_instr = $instr[6:2] ==? 5'b01011 || $instr[6:2] ==? 5'b011x0 ||
                        $instr[6:2] ==? 5'b10100;
          
          $is_j_instr = $instr[6:2] ==? 5'b11011;
          
-         $is_i_instr = $instr[6:2] ==? 5'b0000x ||
-                       $instr[6:2] ==? 5'b001x0 ||
+         $is_i_instr = $instr[6:2] ==? 5'b0000x || $instr[6:2] ==? 5'b001x0 ||
                        $instr[6:2] ==? 5'b11001;
          
          $is_b_instr = $instr[6:2] ==? 5'b11000;
          
-         //Instructions immediate decode
+      //Instructions immediate decode
          $imm[31:0] = $is_i_instr ? {{21{$instr[31]}}, $instr[30:20]} :
                       $is_s_instr ? {{21{$instr[31]}}, $instr[30:25], $instr[11:7]} :
                       $is_b_instr ? {{20{$instr[31]}}, $instr[7], $instr[30:25], $instr[11:8], 1'b0} :
                       $is_u_instr ? {$instr[31:12], 12'b0} :
-                      $is_j_instr ? {{12{$instr[31]}}, $instr[19:12], $instr[20], $instr[30:21], 1'b0} : 32'b0;
-                     
+                      $is_j_instr ? {{12{$instr[31]}}, $instr[19:12], $instr[20], $instr[30:21], 1'b0} :
+                                    32'b0;
+
          //Instruction field decode
          $funct7_valid = $is_r_instr ;
          ?$funct7_valid
@@ -103,40 +115,58 @@
             $rd[4:0] = $instr[11:7];
          $opcode[6:0] = $instr[6:0];
          
+      
          //Individual instructions decode
          $dec_bits[10:0] = {$funct7[5],$funct3,$opcode};
+         $is_addi = $dec_bits ==? 11'bx_000_0010011;
+         $is_add = $dec_bits ==? 11'b0_000_0110011;
          $is_beq = $dec_bits ==? 11'bx_000_1100011;
          $is_bgeu = $dec_bits ==? 11'bx_111_1100011;
          $is_bne = $dec_bits ==? 11'bx_001_1100011;
          $is_bltu = $dec_bits ==? 11'bx_110_1100011;
          $is_bge = $dec_bits ==? 11'bx_101_1100011;
          $is_blt = $dec_bits ==? 11'bx_100_1100011;
+         $is_load = $opcode == 7'b0000011;
+         $is_jalr = $dec_bits ==? 11'bx_000_1100111;
+         $is_jal = $dec_bits ==? 11'bx_xxx_1101111;
+      @3
+         $is_jump = $is_jal || $is_jalr ;
          
+      @2 
+         $jalr_target_pc[31:0] = $src1_value +$imm ;
          //Register file-read
-         ?$rs1_valid
-            $rf_rd_en1 = $rs1_valid;
-            $rf_rd_index1[4:0] = $rs1[4:0];
-         ?$rs2_valid
-            $rf_rd_en2 = $rs2_valid;
-            $rf_rd_index2[4:0] = $rs2[4:0];
-         
+         $rf_rd_en1 = $rs1_valid;
+         $rf_rd_index1[4:0] = $rs1;
+         $rf_rd_en2 = $rs2_valid;
+         $rf_rd_index2[4:0] = $rs2;
+      @2   
+         //`BOGUS_USE($rf_rd_data1 $rf_rd_data2)
          $src1_value[31:0] = $rf_rd_data1[31:0];
          $src2_value[31:0] = $rf_rd_data2[31:0];
          
+      @3 
          //Arthematic and logic unit
-         $result[31:0] = $is_addi ? $src1_value + $imm :
-                         $is_add ? $src1_value + $src2_value : 32'bx;
-                         
+         $result[31:0] = $is_addi ? $src1_value + $imm : $is_add ? $src1_value + $src2_value : 32'bx;
+         
          //Regiter Write
          $rf_wr_en = $rd_valid && $rd != 5'b0;
          $rf_wr_index[4:0] = $rd;
          $rf_wr_data[31:0] = $result;
          
-         //Branch Instructions
-         $taken_br = $is_beq ? ($src1_value == $src2_value) : $is_bne ? ($src1_value != $src2_value) : $is_blt ? (($src1_value < $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bge ? (($src1_value >= $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bltu ? ($src1_value < $src2_value) : $is_bgeu ? ($src1_value >= $src2_value) : 1'b0;
-         $br_target_pc[31:0] = $pc +$imm;
          
-         `BOGUS_USE($is_beq $is_bne $is_blt $is_bge $is_bltu $is_bgeu)
+         //Branch Instructions
+         $taken_br[31:0] = $is_beq ? ($src1_value == $src2_value) : $is_bne ? ($src1_value != $src2_value) : $is_blt ? (($src1_value < $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bge ? (($src1_value >= $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bltu ? ($src1_value < $src2_value) : $is_bgeu ? ($src1_value >= $src2_value) : 1'b0;
+         
+         $br_target_pc[31:0] = $pc + $imm;
+         //
+         $valid_taken_br = $valid && $taken_br ;
+         
+         *passed = |cpu/xreg[10]>>5$value == (1+2+3+4+5+6+7+8+9);
+         
+         
+         
+         `BOGUS_USE($is_beq $is_bne $is_blt $is_bge $is_bltu $is_bgeu $taken_br)
+         
       // ...
 
       // Note: Because of the magic we are using for visualisation, if visualisation is enabled below,
@@ -155,7 +185,7 @@
    //  o CPU visualization
    |cpu
       m4+imem(@1)    // Args: (read stage)
-      //m4+rf(@1, @1)  // Args: (read stage, write stage) - if equal, no register bypass is required
+      m4+rf(@2, @3)  // Args: (read stage, write stage) - if equal, no register bypass is required
       //m4+dmem(@4)    // Args: (read/write stage)
    
    m4+cpu_viz(@4)    // For visualisation, argument should be at least equal to the last stage of CPU logic
