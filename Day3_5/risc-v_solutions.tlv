@@ -126,9 +126,11 @@
          $is_bltu = $dec_bits ==? 11'bx_110_1100011;
          $is_bge = $dec_bits ==? 11'bx_101_1100011;
          $is_blt = $dec_bits ==? 11'bx_100_1100011;
-         $is_load = $opcode == 7'b0000011;
+
          $is_jalr = $dec_bits ==? 11'bx_000_1100111;
          $is_jal = $dec_bits ==? 11'bx_xxx_1101111;
+         
+         $is_load = $opcode == 7'b0000011;
          
          $is_xori = $dec_bits ==? 11'bx_100_0010011;
          $is_xor = $dec_bits ==? 11'b0_100_0110011;
@@ -152,11 +154,11 @@
          $is_auipc = $dec_bits ==? 11'bx_xxx_0010111;
          $is_andi = $dec_bits ==? 11'bx_111_0010011;
          $is_and = $dec_bits ==? 11'b0_111_0110011;
-         
       @3
          $is_jump = $is_jal || $is_jalr ;
          
       @2 
+         
          $jalr_target_pc[31:0] = $src1_value +$imm ;
          //Register file-read
          $rf_rd_en1 = $rs1_valid;
@@ -196,18 +198,29 @@
                          $is_slti ? ($src1_value[31] == $imm[31]) ? $sltiu_rslt : {31'b0, $src1_value[31]} :
                          $is_sra ? {{32{$src1_value[31]}}, $src1_value} > $src2_value[4:0] : 32'bx ;
          
-         //Regiter Write
-         $rf_wr_en = $rd_valid && $rd != 5'b0;
-         $rf_wr_index[4:0] = $rd;
-         $rf_wr_data[31:0] = $result;
-         
-         
          //Branch Instructions
          $taken_br[31:0] = $is_beq ? ($src1_value == $src2_value) : $is_bne ? ($src1_value != $src2_value) : $is_blt ? (($src1_value < $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bge ? (($src1_value >= $src2_value) ^ ($src1_value[31] != $src2_value[31])) : $is_bltu ? ($src1_value < $src2_value) : $is_bgeu ? ($src1_value >= $src2_value) : 1'b0;
          
-         $br_target_pc[31:0] = $pc + $imm;
+         
          //
          $valid_taken_br = $valid && $taken_br ;
+         
+      @3
+         //REGISTER FILE WRITE
+         $rf_wr_en = ($rd_valid && $rd != 5'b0 && $valid) || >>2$valid_load;
+         $rf_wr_index[4:0] = >>2$valid_load ? >>2$rd : $rd;
+         $rf_wr_data[31:0] = >>2$valid_load ? >>2$ld_data : $result;
+      @4
+         //Memory
+         $dmem_wr_en = $is_s_instr && $valid ;
+         $dmem_addr[3:0] = $result[5:2] ;
+         $dmem_wr_data[31:0] = $src2_value ;
+         $dmem_rd_en = $is_load ;
+      @2
+         $br_target_pc[31:0] = $pc +$imm;
+      @5
+         //LOAD DATA
+         $ld_data[31:0] = $dmem_rd_data ;
          
          *passed = |cpu/xreg[10]>>5$value == (1+2+3+4+5+6+7+8+9);
          
@@ -234,7 +247,7 @@
    |cpu
       m4+imem(@1)    // Args: (read stage)
       m4+rf(@2, @3)  // Args: (read stage, write stage) - if equal, no register bypass is required
-      //m4+dmem(@4)    // Args: (read/write stage)
+      m4+dmem(@4)    // Args: (read/write stage)
    
    m4+cpu_viz(@4)    // For visualisation, argument should be at least equal to the last stage of CPU logic
                        // @4 would work for all labs
